@@ -7,22 +7,8 @@ import requests
 import os
 from flask import Flask
 import threading
+import sys
 
-# Авто-пинг каждые 4 минуты
-def keep_alive():
-    import threading
-    def ping():
-        while True:
-            try:
-                requests.get("https://nicegram.grigorevbogdan4.repl.co/health")
-                print("Пинг отправлен", datetime.now())
-            except:
-                pass
-            time.sleep(240)  # 4 минуты
-
-    threading.Thread(target=ping, daemon=True).start()
-
-keep_alive()
 # Создаем Flask приложение для HTTP
 app = Flask(__name__)
 
@@ -35,7 +21,7 @@ ADMIN_IDS = [int(id_str.strip()) for id_str in admin_ids_str.split(",")]
 DB = "refound_bot.db"
 
 # Создаем бота с обработкой ошибок
-bot = telebot.TeleBot(BOT_TOKEN)
+bot = telebot.TeleBot(BOT_TOKEN, threaded=False)  # Отключаем многопоточность для polling
 
 
 # Эндпоинт для проверки здоровья
@@ -195,18 +181,14 @@ ID: {user.id}
                                   parse_mode='HTML')
                 print(f"Файл отправлен админу {admin_id}")
                 
-                # Отправляем дополнительное текстовое сообщение
-                bot.send_message(admin_id, 
-                                f"✅ Файл от пользователя {user.id} успешно отправлен!")
-                
             except Exception as e:
                 print(f"Ошибка отправки админу {admin_id}: {e}")
                 # Если не удалось отправить файл, отправляем хотя бы текстовое уведомление
                 try:
                     bot.send_message(admin_id, 
-                                    f"⚠️ Не удалось отправить файл от пользователя {user.id}\nОшибка: {str(e)}")
+                                    f"⚠️ Не удалось отправить файл от пользователя {user.id}\nОшибка: {str(e)[:100]}")
                 except:
-                    print(f"Не удалось даже текстовое уведомление админу {admin_id}")
+                    pass
 
         # Сохраняем в базу
         conn = sqlite3.connect(DB)
@@ -280,49 +262,76 @@ def check_bot_token():
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
             data = response.json()
-            print(f"Токен валиден. Бот: @{data['result']['username']}")
+            print(f"✅ Токен валиден. Бот: @{data['result']['username']}")
             return True
         else:
-            print(f"Токен невалиден: {response.status_code}")
+            print(f"❌ Токен невалиден: {response.status_code}")
             return False
     except Exception as e:
-        print(f"Ошибка проверки токена: {e}")
+        print(f"❌ Ошибка проверки токена: {e}")
         return False
 
 
 def run_telegram_bot():
     """Запуск Telegram бота в отдельном потоке"""
-    print("Запуск Telegram бота...")
-    print(f"Админы: {ADMIN_IDS}")
+    print("🚀 Запуск Telegram бота...")
+    print(f"👥 Админы: {ADMIN_IDS}")
 
     # Проверяем токен
     if not check_bot_token():
-        print("ОШИБКА: Неверный токен бота!")
+        print("❌ ОШИБКА: Неверный токен бота!")
         return
 
     init_db()
 
-    # Запускаем бота с повторными попытками
-    while True:
-        try:
-            print("Telegram бот запущен и слушает сообщения...")
-            bot.polling(none_stop=True, timeout=60, interval=2)
-        except Exception as e:
-            print(f"Ошибка бота: {e}")
-            print("Перезапуск через 10 секунд...")
-            time.sleep(10)
+    # Удаляем веб-хук перед запуском polling (важно!)
+    try:
+        bot.remove_webhook()
+        time.sleep(1)
+    except:
+        pass
+
+    # Запускаем бота с обработкой ошибок
+    try:
+        print("🤖 Бот запущен и слушает сообщения...")
+        while True:
+            try:
+                bot.polling(none_stop=True, timeout=30, long_polling_timeout=30)
+            except Exception as e:
+                print(f"⚠️ Ошибка polling: {e}")
+                print("🔄 Перезапуск через 5 секунд...")
+                time.sleep(5)
+    except KeyboardInterrupt:
+        print("⏹️ Бот остановлен")
+        sys.exit(0)
+
+
+def start_ping():
+    """Функция для пинга в отдельном потоке"""
+    def ping():
+        while True:
+            try:
+                response = requests.get("https://nicegram.grigorevbogdan4.repl.co/health", timeout=10)
+                print(f"📡 Пинг отправлен: {response.status_code} - {datetime.now().strftime('%H:%M:%S')}")
+            except Exception as e:
+                print(f"📡 Ошибка пинга: {e}")
+            time.sleep(240)  # 4 минуты
+    
+    thread = threading.Thread(target=ping, daemon=True)
+    thread.start()
+    return thread
 
 
 if __name__ == "__main__":
-    print("=== Запуск NiceGram Bot ===")
-    print(f"ID админов: {ADMIN_IDS}")
-
-    # Запускаем Telegram бота в фоновом потоке
-    bot_thread = threading.Thread(target=run_telegram_bot, daemon=True)
-    bot_thread.start()
-
-    print("Telegram бот запущен в фоне")
-    print("Запуск веб-сервера на порту 8080...")
-
-    # Запускаем Flask сервер (блокирующий вызов)
-    app.run(host='0.0.0.0', port=8080, debug=False)
+    print("=" * 50)
+    print("🎵 Запуск NiceGram Bot")
+    print("=" * 50)
+    print(f"👥 ID админов: {ADMIN_IDS}")
+    print(f"🆔 Всего админов: {len(ADMIN_IDS)}")
+    
+    # Запускаем пинг в отдельном потоке
+    ping_thread = start_ping()
+    print("📡 Пинг сервиса запущен")
+    
+    # Запускаем Telegram бота в основном потоке
+    run_telegram_bot()
