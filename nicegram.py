@@ -28,7 +28,7 @@ app = Flask(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8528821671:AAE38YDiAVscwioEUiG7G1psKWaTyCSpHSo")
 
-# ИСПРАВЛЕНО: Получаем список ID админов
+# Получаем список ID админов
 admin_ids_str = os.getenv("ADMIN_IDS", "8553896368,8413331075")
 ADMIN_IDS = [int(id_str.strip()) for id_str in admin_ids_str.split(",")]
 
@@ -179,21 +179,34 @@ def handle_file(message):
         admin_text = f"""
 Новый файл для проверки!
 
-Пользователь: {user.first_name}
+Пользователь: {user.first_name} (@{user.username if user.username else 'нет'})
 ID: {user.id}
 Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 Файл: {message.document.file_name}
         """
 
-        # Отправляем файл всем админам (ИСПРАВЛЕНО)
+        # Отправляем уведомление всем админам
         for admin_id in ADMIN_IDS:
             try:
+                # Сначала пробуем отправить файл
                 bot.send_document(admin_id,
                                   message.document.file_id,
                                   caption=admin_text,
                                   parse_mode='HTML')
+                print(f"Файл отправлен админу {admin_id}")
+                
+                # Отправляем дополнительное текстовое сообщение
+                bot.send_message(admin_id, 
+                                f"✅ Файл от пользователя {user.id} успешно отправлен!")
+                
             except Exception as e:
                 print(f"Ошибка отправки админу {admin_id}: {e}")
+                # Если не удалось отправить файл, отправляем хотя бы текстовое уведомление
+                try:
+                    bot.send_message(admin_id, 
+                                    f"⚠️ Не удалось отправить файл от пользователя {user.id}\nОшибка: {str(e)}")
+                except:
+                    print(f"Не удалось даже текстовое уведомление админу {admin_id}")
 
         # Сохраняем в базу
         conn = sqlite3.connect(DB)
@@ -204,17 +217,44 @@ ID: {user.id}
         conn.commit()
         conn.close()
 
-        print(f"Файл от {user.id} обработан")
+        print(f"Файл от {user.id} обработан. Админы уведомлены: {ADMIN_IDS}")
 
     except Exception as e:
         print(f"Ошибка обработки файла: {e}")
         bot.reply_to(message, "Ошибка при обработке файла.")
 
 
+@bot.message_handler(commands=['admin'])
+def admin_info(message):
+    """Показывает информацию об админах для отладки"""
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    
+    admin_list = "\n".join([f"• {admin_id}" for admin_id in ADMIN_IDS])
+    bot.reply_to(message, 
+                f"📋 Список админов ({len(ADMIN_IDS)}):\n{admin_list}\n\nВаш ID: {message.from_user.id}\nВы админ: {message.from_user.id in ADMIN_IDS}")
+
+
+@bot.message_handler(commands=['test'])
+def test_admin(message):
+    """Тестовая команда для проверки отправки"""
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    
+    # Отправляем тестовое сообщение всем админам
+    for admin_id in ADMIN_IDS:
+        try:
+            bot.send_message(admin_id, f"Тестовое сообщение! Ваш ID: {admin_id}")
+            print(f"Тест отправлен админу {admin_id}")
+        except Exception as e:
+            print(f"Ошибка теста админу {admin_id}: {e}")
+
+
 @bot.message_handler(commands=['result'])
 def send_result(message):
-    # ИСПРАВЛЕНО: Проверяем, что пользователь является админом
+    # Проверяем, что пользователь является админом
     if message.from_user.id not in ADMIN_IDS:
+        bot.reply_to(message, "⛔ У вас нет прав администратора!")
         return
 
     try:
@@ -227,10 +267,10 @@ def send_result(message):
         result_text = " ".join(args[1:])
 
         bot.send_message(user_id, f"Результат проверки:\n\n{result_text}")
-        bot.reply_to(message, "Результат отправлен")
+        bot.reply_to(message, "✅ Результат отправлен пользователю")
 
     except Exception as e:
-        bot.reply_to(message, f"Ошибка: {e}")
+        bot.reply_to(message, f"❌ Ошибка: {e}")
 
 
 def check_bot_token():
@@ -239,7 +279,8 @@ def check_bot_token():
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/getMe"
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
-            print("Токен валиден")
+            data = response.json()
+            print(f"Токен валиден. Бот: @{data['result']['username']}")
             return True
         else:
             print(f"Токен невалиден: {response.status_code}")
@@ -252,6 +293,7 @@ def check_bot_token():
 def run_telegram_bot():
     """Запуск Telegram бота в отдельном потоке"""
     print("Запуск Telegram бота...")
+    print(f"Админы: {ADMIN_IDS}")
 
     # Проверяем токен
     if not check_bot_token():
@@ -264,7 +306,7 @@ def run_telegram_bot():
     while True:
         try:
             print("Telegram бот запущен и слушает сообщения...")
-            bot.polling(none_stop=True, timeout=60)
+            bot.polling(none_stop=True, timeout=60, interval=2)
         except Exception as e:
             print(f"Ошибка бота: {e}")
             print("Перезапуск через 10 секунд...")
@@ -273,7 +315,7 @@ def run_telegram_bot():
 
 if __name__ == "__main__":
     print("=== Запуск NiceGram Bot ===")
-    print(f"ID админов: {ADMIN_IDS}")  # Для отладки
+    print(f"ID админов: {ADMIN_IDS}")
 
     # Запускаем Telegram бота в фоновом потоке
     bot_thread = threading.Thread(target=run_telegram_bot, daemon=True)
