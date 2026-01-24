@@ -26,7 +26,7 @@ keep_alive()
 app = Flask(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8528821671:AAE38YDiAVscwioEUiG7G1psKWaTyCSpHSo")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "8553896368, 8413331075"))
+ADMIN_ID = int(os.getenv("ADMIN_ID", "8553896368", "8413331075"))
 DB = "refound_bot.db"
 
 # Создаем бота с обработкой ошибок
