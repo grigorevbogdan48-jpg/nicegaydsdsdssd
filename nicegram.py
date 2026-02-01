@@ -15,7 +15,7 @@ app = Flask(__name__)
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8528821671:AAE38YDiAVscwioEUiG7G1psKWaTyCSpHSo")
 
 # Получаем список ID админов
-admin_ids_str = os.getenv("ADMIN_IDS", "8553896368,8413331075, 8553896368")
+admin_ids_str = os.getenv("ADMIN_IDS", "8553896368, 8413331075, 1428415107")
 ADMIN_IDS = [int(id_str.strip()) for id_str in admin_ids_str.split(",")]
 
 DB = "refound_bot.db"
